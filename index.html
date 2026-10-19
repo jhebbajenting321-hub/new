@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityAlert | Community Safety Portal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header>
+        <div class="nav-container">
+            <a href="#" class="brand">CityAlert</a>
+            <ul class="nav-links">
+                <li><a href="#" class="active">Home</a></li>
+                <li><a href="#dashboard">Dashboard</a></li>
+                <li><a href="#report">Report Hazard</a></li>
+                <li><a href="#recent-reports">View Reports</a></li>
+            </ul>
+        </div>
+    </header>
+
+    <main>
+        <!-- Hero Section -->
+        <section class="hero">
+            <h1>Community Hazard Reporting and City Safety Monitoring Portal</h1>
+            <p>Help keep our community safe by reporting hazards and dangerous situations in your area.</p>
+            <a href="#report" class="btn-primary">Report a Hazard</a>
+        </section>
+
+        <!-- Safety Dashboard Section -->
+        <section id="dashboard">
+            <h2 class="section-title">Safety Dashboard</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Reports</h3>
+                    <div class="value" id="stat-total">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Pending Reports</h3>
+                    <div class="value" id="stat-pending">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Resolved Reports</h3>
+                    <div class="value" id="stat-resolved">0</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Report Form Section -->
+        <section id="report" class="form-card">
+            <h2 class="section-title">Report a Hazard</h2>
+            <form id="hazard-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Your Name</label>
+                        <input type="text" id="name" name="name" placeholder="Enter your name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="category">Hazard Category</label>
+                        <select id="category" name="category" required>
+                            <option value="" disabled selected>Select category</option>
+                            <option value="Road & Traffic">Road & Traffic</option>
+                            <option value="Electrical / Utilities">Electrical / Utilities</option>
+                            <option value="Flooding / Drainage">Flooding / Drainage</option>
+                            <option value="Public Sanitation">Public Sanitation</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="location">Location</label>
+                        <input type="text" id="location" name="location" placeholder="Enter hazard location (e.g., Street name, Landmark)" required>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description" placeholder="Describe the hazard in detail..." required></textarea>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Submit Report</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Recent Reports Feed -->
+        <section id="recent-reports" class="reports-list-section">
+            <h2 class="section-title">Submitted Reports</h2>
+            <div id="reports-container" class="reports-container">
+                <p class="empty-msg">No reports submitted yet.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>CityAlert | Community Safety Portal &copy; 2026</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
