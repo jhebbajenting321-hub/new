@@ -1,14 +1,17 @@
 <!DOCTYPE html>
-<html lang="tl" class="scroll-smooth">
+<html lang="en" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CityAlert - Ulat Panganib sa General Santos City</title>
+  <title>CityAlert - General Santos City Hazard Reporting</title>
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Leaflet.js CSS & JS (Interactive Map API) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
   <!-- Firebase SDK (v10 Compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -19,35 +22,35 @@
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 min-h-screen flex flex-col">
 
-  <!-- NAVIGATION BAR -->
+  <!-- TOP NAVBAR -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
     <div class="max-w-6xl mx-auto px-4 py-3.5 flex justify-between items-center">
       
-      <!-- Logo -->
+      <!-- Brand Logo -->
       <a href="#home" class="flex items-center space-x-2">
         <div class="bg-blue-600 text-white p-1.5 rounded-lg">
           <i data-lucide="shield-alert" class="w-5 h-5"></i>
         </div>
         <div class="flex flex-col">
           <span class="text-xl font-bold text-slate-900 tracking-tight leading-none">CityAlert</span>
-          <span class="text-[10px] font-semibold text-blue-600 tracking-wider uppercase">LGU General Santos City</span>
+          <span class="text-[10px] font-semibold text-blue-600 tracking-wider uppercase">General Santos City</span>
         </div>
       </a>
 
-      <!-- PUBLIC NAV -->
-      <nav id="public-nav" class="flex items-center space-x-6 text-sm font-medium">
-        <a href="#home" class="text-slate-600 hover:text-blue-600 transition">Unang Pahina</a>
-        <a href="#dashboard" class="text-slate-600 hover:text-blue-600 transition">Dashboard</a>
-        <a href="#my-reports" class="text-slate-600 hover:text-blue-600 transition">Mga Ulat</a>
-        <a href="#report-form" class="text-slate-600 hover:text-blue-600 transition">Mag-ulat ng Panganib</a>
+      <!-- PUBLIC NAVIGATION -->
+      <nav id="public-nav" class="flex items-center space-x-4 md:space-x-6 text-sm font-medium">
+        <a href="#home" class="hidden sm:inline text-slate-600 hover:text-blue-600 transition">Home</a>
+        <a href="#dashboard" class="hidden sm:inline text-slate-600 hover:text-blue-600 transition">Dashboard</a>
+        <a href="#live-map-section" class="text-slate-600 hover:text-blue-600 transition">Map & Feed</a>
+        <a href="#report-form" class="text-slate-600 hover:text-blue-600 transition">Report</a>
 
-        <button id="public-admin-trigger" onclick="openLoginModal()" title="Login ng Admin" class="text-slate-400 hover:text-slate-600 transition p-1.5 rounded-md hover:bg-slate-100">
+        <button id="public-admin-trigger" onclick="openLoginModal()" title="Administrator Login" class="text-slate-400 hover:text-slate-600 transition p-1.5 rounded-md hover:bg-slate-100">
           <i data-lucide="lock" class="w-4 h-4"></i>
         </button>
       </nav>
 
-      <!-- ADMIN NAV -->
-      <nav id="admin-nav" class="hidden items-center space-x-6 text-sm font-medium">
+      <!-- ADMIN NAVIGATION -->
+      <nav id="admin-nav" class="hidden items-center space-x-4 md:space-x-6 text-sm font-medium">
         <div class="relative">
           <button id="notif-btn" onclick="toggleNotifications()" class="relative p-2 text-slate-600 hover:text-blue-600 focus:outline-none rounded-full hover:bg-slate-100 transition">
             <i data-lucide="bell" class="w-5 h-5"></i>
@@ -58,20 +61,20 @@
 
           <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden">
             <div class="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Mga Abiso (GenSan LGU)</span>
-              <button onclick="clearNotifications()" class="text-xs text-blue-600 hover:underline font-medium">Burahin lahat</button>
+              <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">LGU GenSan Notifications</span>
+              <button onclick="clearNotifications()" class="text-xs text-blue-600 hover:underline font-medium">Clear all</button>
             </div>
             <div id="notif-list" class="max-h-64 overflow-y-auto divide-y divide-slate-100">
-              <p class="p-4 text-xs text-slate-400 text-center">Walang bagong abiso</p>
+              <p class="p-4 text-xs text-slate-400 text-center">No new notifications</p>
             </div>
           </div>
         </div>
 
         <span class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1">
-          <i data-lucide="shield-check" class="w-3.5 h-3.5 text-amber-600"></i> Admin Mode
+          <i data-lucide="shield-check" class="w-3.5 h-3.5 text-amber-600"></i> <span class="hidden sm:inline">GenSan Admin Mode</span>
         </span>
         <button onclick="logoutAdmin()" class="text-xs font-semibold text-slate-500 hover:text-red-600 transition flex items-center gap-1">
-          <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Umalis (Logout)
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Logout
         </button>
       </nav>
 
@@ -81,139 +84,223 @@
   <!-- MAIN CONTAINER -->
   <main class="max-w-6xl mx-auto px-4 py-8 flex-1 w-full space-y-8">
 
-    <!-- PUBLIC VIEW -->
+    <!-- PUBLIC VIEW CONTAINER -->
     <div id="public-view-container" class="space-y-8">
       
       <!-- HERO BANNER -->
       <section id="home" class="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
         <div class="flex items-center gap-2 mb-2">
           <span class="bg-blue-100 text-blue-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-            Lokal na Pamahalaan ng General Santos
+            LGU General Santos City
           </span>
         </div>
         <h1 class="text-2xl md:text-3xl font-extrabold text-slate-900 mb-2">
-          CityAlert: Sistema ng Pag-uulat ng Panganib at Kaligtasan sa GenSan
+          CityAlert: General Santos City Community Hazard Reporting & Safety Portal
         </h1>
         <p class="text-slate-600 text-sm max-w-2xl mb-6">
-          Tumulong sa pagpapanatili ng kaligtasan sa ating lungsod. Mag-ulat ng mga nasirang kalsada, baha, nakalaylay na kable, o iba pang panganib gamit ang GPS at larawan.
+          Help keep General Santos City safe by reporting road damage, flooding, fallen debris, and public safety hazards with photo evidence and GPS location tagging directly to city monitoring teams.
         </p>
-        <a href="#report-form" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm text-sm transition">
-          Mag-ulat ng Panganib Ngayon
-        </a>
+        <div class="flex flex-wrap gap-3">
+          <a href="#report-form" class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm text-sm transition">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i> Report a Hazard in GenSan
+          </a>
+          <a href="#live-map-section" class="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-5 py-2.5 rounded-lg text-sm transition">
+            <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i> View Live Hazard Map
+          </a>
+        </div>
       </section>
 
-      <!-- DASHBOARD STATS -->
+      <!-- SAFETY DASHBOARD STATS -->
       <section id="dashboard">
-        <h2 class="text-lg font-bold text-slate-900 mb-4">Dashboard ng Kaligtasan sa GenSan</h2>
+        <h2 class="text-lg font-bold text-slate-900 mb-4">GenSan Public Safety Dashboard</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Kabuuan ng Ulat</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total City Reports</p>
             <p id="stat-total" class="text-4xl font-extrabold text-slate-900">0</p>
           </div>
           <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Inaaksyunan (Pending)</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Pending Action</p>
             <p id="stat-pending" class="text-4xl font-extrabold text-amber-600">0</p>
           </div>
           <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Naresolba Na (Resolved)</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Resolved Hazards</p>
             <p id="stat-resolved" class="text-4xl font-extrabold text-emerald-600">0</p>
           </div>
         </div>
       </section>
 
-      <!-- LIVE FEED TABLE -->
-      <section id="my-reports" class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+      <!-- INTERACTIVE GIS HAZARD MAP -->
+      <section id="live-map-section" class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
-            <h2 class="text-lg font-bold text-slate-900">Pampublikong Feed ng mga Ulat sa GenSan</h2>
-            <p class="text-xs text-slate-500">Kasalukuyang katayuan ng mga panganib sa iba't ibang barangay</p>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <i data-lucide="map" class="w-5 h-5 text-blue-600"></i> GenSan Live GIS Hazard Map
+            </h2>
+            <p class="text-xs text-slate-500">Interactive OpenStreetMap view plotting active and resolved hazards across General Santos City</p>
           </div>
-          <span id="user-report-count" class="text-xs font-semibold bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full border border-blue-100">
-            0 Ulat
-          </span>
+          <div class="flex items-center gap-3 text-xs font-medium">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Pending</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Resolved</span>
+          </div>
+        </div>
+        <div id="public-map" class="w-full h-80 md:h-96 rounded-lg border border-slate-200 z-10"></div>
+      </section>
+
+      <!-- LIVE COMMUNITY FEED -->
+      <section id="my-reports" class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Live GenSan Community Hazard Feed</h2>
+            <p class="text-xs text-slate-500">Real-time status updates synced live across General Santos City barangays</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="feed-status-filter" onchange="renderUserSubmissions()" class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-blue-500">
+              <option value="ALL">All Statuses</option>
+              <option value="Pending">Pending Only</option>
+              <option value="Resolved">Resolved Only</option>
+            </select>
+            <span id="user-report-count" class="text-xs font-semibold bg-blue-50 text-blue-600 px-2.5 py-1.5 rounded-lg border border-blue-100">
+              0 Reports
+            </span>
+          </div>
         </div>
 
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs text-slate-600">
             <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-100">
               <tr>
-                <th class="p-3">Larawan</th>
-                <th class="p-3">Kategorya</th>
-                <th class="p-3">Lokasyon / Barangay</th>
-                <th class="p-3">Kasalaysayan</th>
-                <th class="p-3">Petsa</th>
-                <th class="p-3 text-right">Katayuan</th>
+                <th class="p-3">Photo</th>
+                <th class="p-3">Category</th>
+                <th class="p-3">Barangay / Location</th>
+                <th class="p-3">Hazard Description</th>
+                <th class="p-3">Date Submitted</th>
+                <th class="p-3 text-right">Status</th>
               </tr>
             </thead>
             <tbody id="user-table-body" class="divide-y divide-slate-100">
-              <!-- Live Database Content -->
+              <!-- Live Database Records -->
             </tbody>
           </table>
         </div>
       </section>
 
-      <!-- HAZARD FORM WITH GPS & PHOTO -->
+      <!-- REPORT A HAZARD FORM -->
       <section id="report-form" class="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
-        <h2 class="text-xl font-bold text-slate-900 mb-1">Mag-ulat ng Panganib</h2>
-        <p class="text-xs text-slate-500 mb-6">Punan ang mga detalye sa ibaba upang maipaabot sa tanggapan ng lungsod.</p>
+        <h2 class="text-xl font-bold text-slate-900 mb-1">Report a Hazard in GenSan</h2>
+        <p class="text-xs text-slate-500 mb-6">Submit photo evidence, pin exact location on the map, and alert local authorities.</p>
 
         <form id="hazard-form" onsubmit="handleFormSubmit(event)" class="space-y-5">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-2">Pangalan Mo</label>
-              <input type="text" id="reporter-name" required placeholder="Hal. Juan Dela Cruz" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
+              <label class="block text-xs font-semibold text-slate-700 mb-2">Your Name</label>
+              <input type="text" id="reporter-name" required placeholder="e.g. Juan Dela Cruz" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-2">Kategorya ng Panganib</label>
+              <label class="block text-xs font-semibold text-slate-700 mb-2">Hazard Category</label>
               <select id="hazard-category" required class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 bg-white">
-                <option value="" disabled selected>Pumili ng kategorya</option>
-                <option value="Sirang Kalsada / Pothole">Sirang Kalsada / Pothole</option>
-                <option value="Baha sa Daan">Baha sa Daan</option>
-                <option value="Nakalaylay na Kable / Kuryente">Nakalaylay na Kable / Kuryente</option>
-                <option value="Nabagsak na Puno / Harang">Nabagsak na Puno / Harang</option>
-                <option value="Sirang Traffic Light">Sirang Traffic Light</option>
-                <option value="Iba pang Panganib">Iba pang Panganib</option>
+                <option value="" disabled selected>Select category</option>
+                <option value="Road Damage / Pothole">Road Damage / Pothole</option>
+                <option value="Street Flooding">Street Flooding</option>
+                <option value="Electrical / Sagging Cable Wire">Electrical / Sagging Cable Wire</option>
+                <option value="Fallen Tree / Debris Blockage">Fallen Tree / Debris Blockage</option>
+                <option value="Non-Functional Traffic Light">Non-Functional Traffic Light</option>
+                <option value="Other Public Safety Concern">Other Public Safety Concern</option>
               </select>
             </div>
           </div>
 
-          <!-- GPS LOCATION INPUT -->
-          <div>
-            <div class="flex justify-between items-center mb-2">
-              <label class="block text-xs font-semibold text-slate-700">Lokasyon / Barangay (GPS Location)</label>
-              <button type="button" onclick="getCurrentLocation()" class="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition">
-                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Gamitin ang Aking GPS
+          <!-- Barangay & Landmark -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-2">Barangay</label>
+              <select id="hazard-barangay" required class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 bg-white">
+                <option value="" disabled selected>Select Barangay in GenSan</option>
+                <option value="Apopong">Apopong</option>
+                <option value="Baluan">Baluan</option>
+                <option value="Batomelong">Batomelong</option>
+                <option value="Buayan">Buayan</option>
+                <option value="Bula">Bula</option>
+                <option value="Calumpang">Calumpang</option>
+                <option value="City Heights">City Heights</option>
+                <option value="Conel">Conel</option>
+                <option value="Dadiangas East">Dadiangas East</option>
+                <option value="Dadiangas North">Dadiangas North</option>
+                <option value="Dadiangas South">Dadiangas South</option>
+                <option value="Dadiangas West">Dadiangas West</option>
+                <option value="Fatima">Fatima</option>
+                <option value="Katangawan">Katangawan</option>
+                <option value="Labangal">Labangal</option>
+                <option value="Lagao">Lagao</option>
+                <option value="Ligaya">Ligaya</option>
+                <option value="Mabuhay">Mabuhay</option>
+                <option value="Olympog">Olympog</option>
+                <option value="San Isidro">San Isidro</option>
+                <option value="San Jose">San Jose</option>
+                <option value="Siguel">Siguel</option>
+                <option value="Sinawal">Sinawal</option>
+                <option value="Tambler">Tambler</option>
+                <option value="Tinagacan">Tinagacan</option>
+                <option value="Upper Labay">Upper Labay</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-2">Specific Street / Landmark</label>
+              <input type="text" id="hazard-location" required placeholder="e.g. National Highway near Oval Plaza" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
+            </div>
+          </div>
+
+          <!-- GPS / Interactive Location Picker -->
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label class="block text-xs font-bold text-slate-700">Pin Exact Location on Map (Optional / Recommended)</label>
+                <p class="text-[11px] text-slate-500">Click anywhere on the map below or use your device GPS to tag coordinates.</p>
+              </div>
+              <button type="button" onclick="detectUserGPS()" class="inline-flex items-center gap-1.5 bg-white hover:bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Use My Current GPS
               </button>
             </div>
-            <input type="text" id="hazard-location" required placeholder="Hal. Lagao Highway, Brgy. Calumpang, o i-click ang GPS button" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
-            <p id="gps-status" class="text-[11px] text-slate-400 mt-1"></p>
-          </div>
-
-          <!-- DESCRIPTION -->
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-2">Detalyadong Paglalarawan</label>
-            <textarea id="hazard-desc" rows="3" required placeholder="Ipaliwanag ang nakitang peligro..." class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"></textarea>
-          </div>
-
-          <!-- PHOTO UPLOAD -->
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-2">Kumuha o Mag-upload ng Larawan (Photo Attachment)</label>
-            <input type="file" id="hazard-photo" accept="image/*" onchange="previewImage(event)" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-300 rounded-lg p-1">
-            <div id="image-preview-container" class="mt-3 hidden">
-              <img id="image-preview" src="#" alt="Preview" class="h-32 w-auto object-cover rounded-lg border border-slate-300 shadow-sm">
+            <div id="picker-map" class="w-full h-56 rounded-lg border border-slate-300 z-10"></div>
+            <div class="flex items-center gap-4 text-[11px] text-slate-500">
+              <span>Latitude: <strong id="display-lat" class="text-slate-700">6.1164</strong></span>
+              <span>Longitude: <strong id="display-lng" class="text-slate-700">125.1716</strong></span>
+              <input type="hidden" id="hazard-lat" value="6.1164">
+              <input type="hidden" id="hazard-lng" value="125.1716">
             </div>
+          </div>
+
+          <!-- Photo Upload Evidence -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-2">Photo Evidence (Optional)</label>
+            <div class="flex items-center gap-4">
+              <label class="flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 px-4 py-2.5 rounded-lg text-xs font-medium text-slate-700 transition">
+                <i data-lucide="camera" class="w-4 h-4 text-blue-600"></i>
+                <span>Upload or Capture Photo</span>
+                <input type="file" id="hazard-photo" accept="image/*" capture="environment" onchange="previewPhoto(event)" class="hidden">
+              </label>
+              <button type="button" id="remove-photo-btn" onclick="clearPhoto()" class="hidden text-xs text-red-500 hover:underline">Remove</button>
+            </div>
+            <div id="photo-preview-container" class="hidden mt-3">
+              <img id="photo-preview" src="" alt="Hazard Preview" class="h-32 w-auto rounded-lg border border-slate-200 object-cover shadow-sm">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-2">Hazard Description</label>
+            <textarea id="hazard-desc" rows="3" required placeholder="Provide specific details about the hazard (e.g. deep pothole near the intersection obstructing traffic)..." class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"></textarea>
           </div>
 
           <button type="submit" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5 rounded-lg text-sm shadow-sm transition">
-            Ipadala ang Ulat
+            Submit Hazard Report
           </button>
         </form>
       </section>
 
     </div>
 
-    <!-- ADMIN WORKSPACE -->
+    <!-- EXCLUSIVE ADMINISTRATOR WORKSPACE -->
     <div id="admin-view-container" class="hidden space-y-8">
       
       <section class="bg-slate-900 text-white rounded-xl p-6 shadow-md border border-slate-800 space-y-6">
@@ -223,8 +310,8 @@
               <i data-lucide="shield-check" class="w-6 h-6"></i>
             </div>
             <div>
-              <h1 class="text-xl font-bold text-white">CityAlert: Admin Command Center (GenSan)</h1>
-              <p class="text-xs text-slate-400">Konektado sa Firebase Cloud Database</p>
+              <h1 class="text-xl font-bold text-white">CityAlert: GenSan Admin Command Center</h1>
+              <p class="text-xs text-slate-400">Live Firebase Cloud Synchronization Active</p>
             </div>
           </div>
           <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full font-medium">
@@ -234,15 +321,15 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div class="bg-slate-800/80 p-5 rounded-lg border border-slate-700">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Kabuuan ng Ulat</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total GenSan Reports</p>
             <p id="admin-stat-total" class="text-3xl font-extrabold text-white">0</p>
           </div>
           <div class="bg-slate-800/80 p-5 rounded-lg border border-slate-700">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Kailangan ng Aksyon</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Pending LGU Action</p>
             <p id="admin-stat-pending" class="text-3xl font-extrabold text-amber-400">0</p>
           </div>
           <div class="bg-slate-800/80 p-5 rounded-lg border border-slate-700">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Naresolba Na</p>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Resolved Hazards</p>
             <p id="admin-stat-resolved" class="text-3xl font-extrabold text-emerald-400">0</p>
           </div>
         </div>
@@ -250,26 +337,26 @@
 
       <section class="bg-slate-900 text-white rounded-xl p-6 shadow-md border border-slate-800 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h2 class="text-base font-bold text-white">Talaan ng mga Ulat ng Mamamayan</h2>
-          <span class="text-xs text-slate-400">Real-time control panel</span>
+          <h2 class="text-base font-bold text-white">Citizen Hazard Reports Database</h2>
+          <span class="text-xs text-slate-400">Real-time status & photo verification</span>
         </div>
         
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs text-slate-300">
             <thead class="bg-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th class="p-3">Larawan</th>
-                <th class="p-3">Ngapag-ulat</th>
-                <th class="p-3">Kategorya</th>
-                <th class="p-3">Lokasyon / GPS</th>
-                <th class="p-3">Paglalarawan</th>
-                <th class="p-3">Petsa</th>
-                <th class="p-3">Katayuan</th>
-                <th class="p-3 text-right">Aksyon</th>
+                <th class="p-3">Photo</th>
+                <th class="p-3">Reporter</th>
+                <th class="p-3">Category</th>
+                <th class="p-3">Barangay / Location</th>
+                <th class="p-3">Description</th>
+                <th class="p-3">Submitted</th>
+                <th class="p-3">Status</th>
+                <th class="p-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody id="admin-table-body" class="divide-y divide-slate-800">
-              <!-- Admin Content -->
+              <!-- Admin Records -->
             </tbody>
           </table>
         </div>
@@ -279,12 +366,22 @@
 
   </main>
 
+  <!-- PHOTO LIGHTBOX MODAL -->
+  <div id="image-modal" onclick="closeImageModal()" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="relative max-w-2xl w-full bg-white rounded-xl p-2 shadow-2xl" onclick="event.stopPropagation()">
+      <button onclick="closeImageModal()" class="absolute -top-3 -right-3 bg-slate-900 text-white rounded-full p-1.5 shadow-md hover:bg-slate-700">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+      <img id="modal-full-img" src="" alt="Full Hazard Evidence" class="w-full max-h-[80vh] object-contain rounded-lg">
+    </div>
+  </div>
+
   <!-- ADMIN LOGIN MODAL -->
   <div id="login-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center z-50 px-4">
     <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border border-slate-200">
       <div class="flex justify-between items-center mb-4">
         <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-          <i data-lucide="shield-check" class="w-5 h-5 text-blue-600"></i> Admin Portal Login
+          <i data-lucide="shield-check" class="w-5 h-5 text-blue-600"></i> GenSan Admin Portal Login
         </h3>
         <button onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-600">
           <i data-lucide="x" class="w-5 h-5"></i>
@@ -300,11 +397,11 @@
           <label class="block text-xs font-semibold text-slate-700 mb-1">Password</label>
           <input type="password" id="admin-pass" required placeholder="••••••••" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
         </div>
-        <p id="login-error" class="text-xs text-red-500 hidden font-medium">Maling username o password (gamitin: admin / admin123)</p>
+        <p id="login-error" class="text-xs text-red-500 hidden font-medium">Invalid credentials (admin / admin123)</p>
         
         <div class="flex justify-end gap-2 pt-2">
-          <button type="button" onclick="closeLoginModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition">Kanselahin</button>
-          <button type="submit" class="px-4 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Pumasok</button>
+          <button type="button" onclick="closeLoginModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Login</button>
         </div>
       </form>
     </div>

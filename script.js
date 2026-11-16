@@ -23,7 +23,7 @@ try {
     reportsRef = db.ref('reports');
   }
 } catch (e) {
-  console.warn("Firebase warning:", e);
+  console.warn("Firebase initialization error:", e);
 }
 
 // System State
@@ -31,14 +31,24 @@ let isAdminLoggedIn = false;
 let notifications = [];
 let reportsMap = {};
 let initialLoadComplete = false;
-let uploadedBase64Photo = "";
+let currentPhotoBase64 = "";
+
+// Leaflet Map Instances (Centered on General Santos City)
+const GENSAN_COORDS = [6.1164, 125.1716];
+let publicMap = null;
+let publicMarkersLayer = null;
+let pickerMap = null;
+let pickerMarker = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
 
+  initMaps();
+
   if (reportsRef) {
+    // Realtime Listener for Cross-Device Cloud Syncing
     reportsRef.on('value', (snapshot) => {
       const data = snapshot.val() || {};
       
@@ -48,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const newRep = data[key];
             const newNotif = {
               id: Date.now(),
-              message: `Bagong ulat sa ${newRep.location}: ${newRep.category}`,
+              message: `New report in Brgy. ${newRep.barangay || 'GenSan'} (${newRep.location}): ${newRep.category}`,
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               read: false
             };
@@ -63,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateStats();
       renderUserSubmissions();
+      updatePublicMapMarkers();
       if (isAdminLoggedIn) renderAdminTable();
     });
   } else {
@@ -71,104 +82,162 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// 1. GPS GEOLOCATION FEATURE
-function getCurrentLocation() {
-  const status = document.getElementById('gps-status');
-  const locationInput = document.getElementById('hazard-location');
+// ==========================================
+// LEAFLET GIS MAP INTEGRATION
+// ==========================================
+function initMaps() {
+  if (typeof L === 'undefined') return;
 
+  // 1. Live Public Hazard Map
+  const publicMapEl = document.getElementById('public-map');
+  if (publicMapEl) {
+    publicMap = L.map('public-map').setView(GENSAN_COORDS, 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors | CityAlert GenSan'
+    }).addTo(publicMap);
+    publicMarkersLayer = L.layerGroup().addTo(publicMap);
+  }
+
+  // 2. Form Coordinate Picker Map
+  const pickerMapEl = document.getElementById('picker-map');
+  if (pickerMapEl) {
+    pickerMap = L.map('picker-map').setView(GENSAN_COORDS, 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(pickerMap);
+
+    pickerMarker = L.marker(GENSAN_COORDS, { draggable: true }).addTo(pickerMap);
+
+    pickerMarker.on('dragend', function (e) {
+      const pos = e.target.getLatLng();
+      setPickerCoordinates(pos.lat, pos.lng);
+    });
+
+    pickerMap.on('click', function (e) {
+      pickerMarker.setLatLng(e.latlng);
+      setPickerCoordinates(e.latlng.lat, e.latlng.lng);
+    });
+  }
+}
+
+function setPickerCoordinates(lat, lng) {
+  const fixedLat = lat.toFixed(6);
+  const fixedLng = lng.toFixed(6);
+  document.getElementById('hazard-lat').value = fixedLat;
+  document.getElementById('hazard-lng').value = fixedLng;
+  document.getElementById('display-lat').innerText = fixedLat;
+  document.getElementById('display-lng').innerText = fixedLng;
+}
+
+function detectUserGPS() {
   if (!navigator.geolocation) {
-    status.innerText = "Hindi suportado ng iyong browser ang GPS.";
-    status.classList.add("text-red-500");
+    alert("Geolocation is not supported by your browser.");
     return;
   }
 
-  status.innerText = "Kinukuha ang iyong GPS location...";
-  status.classList.remove("text-red-500");
-  status.classList.add("text-blue-600");
-
   navigator.geolocation.getCurrentPosition(
     (position) => {
-      const lat = position.coords.latitude.toFixed(5);
-      const lng = position.coords.longitude.toFixed(5);
-      locationInput.value = `GPS: Lat ${lat}, Lng ${lng} (GenSan)`;
-      status.innerText = "Nakuha na ang GPS coordinates!";
-      status.classList.remove("text-blue-600");
-      status.classList.add("text-emerald-600");
+      const { latitude, longitude } = position.coords;
+      setPickerCoordinates(latitude, longitude);
+      if (pickerMap && pickerMarker) {
+        pickerMap.setView([latitude, longitude], 16);
+        pickerMarker.setLatLng([latitude, longitude]);
+      }
     },
-    (error) => {
-      status.innerText = "Mali sa pagkuha ng GPS. Mangyaring i-type na lamang ang lokasyon.";
-      status.classList.remove("text-blue-600");
-      status.classList.add("text-red-500");
+    () => {
+      alert("Unable to retrieve GPS location. You can click directly on the map to pin the hazard.");
     }
   );
 }
 
-// 2. PHOTO PREVIEW & CONVERSION (Base64)
-function previewImage(event) {
+function updatePublicMapMarkers() {
+  if (!publicMap || !publicMarkersLayer) return;
+  publicMarkersLayer.clearLayers();
+
+  const reportsList = getReportsArray();
+  reportsList.forEach(r => {
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lng);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      const markerColor = r.status === 'Resolved' ? '#10b981' : '#f59e0b';
+      const customIcon = L.divIcon({
+        className: 'custom-pin',
+        html: `<div style="background-color:${markerColor}; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.4);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+
+      const popupContent = `
+        <div class="text-xs space-y-1 max-w-[200px]">
+          <p class="font-bold text-slate-900">${r.category}</p>
+          <p class="text-blue-600 font-medium">Brgy. ${r.barangay || 'GenSan'} - ${r.location}</p>
+          <p class="text-slate-600">${r.desc}</p>
+          ${r.photo ? `<img src="${r.photo}" class="w-full h-20 object-cover rounded mt-1 border" />` : ''}
+          <p class="pt-1 font-semibold ${r.status === 'Resolved' ? 'text-emerald-600' : 'text-amber-600'}">Status: ${r.status}</p>
+        </div>
+      `;
+
+      L.marker([lat, lng], { icon: customIcon })
+        .bindPopup(popupContent)
+        .addTo(publicMarkersLayer);
+    }
+  });
+}
+
+// ==========================================
+// PHOTO UPLOAD & COMPRESSION HANDLER
+// ==========================================
+function previewPhoto(event) {
   const file = event.target.files[0];
-  const preview = document.getElementById('image-preview');
-  const container = document.getElementById('image-preview-container');
+  if (!file) return;
 
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      preview.src = e.target.result;
-      container.classList.remove('hidden');
-      uploadedBase64Photo = e.target.result; // Save base64 data
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const img = new Image();
+    img.onload = function () {
+      // Compress image via canvas so it stores cleanly in Firebase RTDB
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 600;
+      const scaleSize = MAX_WIDTH / img.width;
+      canvas.width = img.width > MAX_WIDTH ? MAX_WIDTH : img.width;
+      canvas.height = img.width > MAX_WIDTH ? img.height * scaleSize : img.height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      currentPhotoBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+      document.getElementById('photo-preview').src = currentPhotoBase64;
+      document.getElementById('photo-preview-container').classList.remove('hidden');
+      document.getElementById('remove-photo-btn').classList.remove('hidden');
     };
-    reader.readAsDataURL(file);
-  } else {
-    container.classList.add('hidden');
-    uploadedBase64Photo = "";
-  }
-}
-
-// FORM SUBMISSION
-function handleFormSubmit(e) {
-  e.preventDefault();
-
-  const submitBtn = document.getElementById('submit-btn');
-  submitBtn.disabled = true;
-  submitBtn.innerText = 'Ipinapadala...';
-
-  const name = document.getElementById('reporter-name').value;
-  const category = document.getElementById('hazard-category').value;
-  const location = document.getElementById('hazard-location').value;
-  const desc = document.getElementById('hazard-desc').value;
-
-  const newReport = {
-    name,
-    category,
-    location,
-    desc,
-    photo: uploadedBase64Photo || "",
-    status: 'Pending',
-    date: new Date().toLocaleDateString(),
-    timestamp: Date.now()
+    img.src = e.target.result;
   };
-
-  if (reportsRef) {
-    reportsRef.push(newReport).then(() => {
-      document.getElementById('hazard-form').reset();
-      document.getElementById('image-preview-container').classList.add('hidden');
-      document.getElementById('gps-status').innerText = "";
-      uploadedBase64Photo = "";
-      submitBtn.disabled = false;
-      submitBtn.innerText = 'Ipadala ang Ulat';
-      alert('Maraming salamat! Naisumite na ang iyong ulat sa LGU General Santos City.');
-    }).catch(err => {
-      submitBtn.disabled = false;
-      submitBtn.innerText = 'Ipadala ang Ulat';
-      alert('Nagkaroon ng problema: ' + err.message);
-    });
-  } else {
-    submitBtn.disabled = false;
-    submitBtn.innerText = 'Ipadala ang Ulat';
-    alert('Hindi nakakonekta sa database.');
-  }
+  reader.readAsDataURL(file);
 }
 
-// MODAL CONTROLS & AUTH
+function clearPhoto() {
+  currentPhotoBase64 = "";
+  document.getElementById('hazard-photo').value = "";
+  document.getElementById('photo-preview').src = "";
+  document.getElementById('photo-preview-container').classList.add('hidden');
+  document.getElementById('remove-photo-btn').classList.add('hidden');
+}
+
+function openImageModal(src) {
+  if (!src) return;
+  document.getElementById('modal-full-img').src = src;
+  document.getElementById('image-modal').classList.remove('hidden');
+  document.getElementById('image-modal').classList.add('flex');
+}
+
+function closeImageModal() {
+  document.getElementById('image-modal').classList.add('hidden');
+  document.getElementById('image-modal').classList.remove('flex');
+}
+
+// ==========================================
+// MODAL & ADMIN AUTHENTICATION
+// ==========================================
 function openLoginModal() {
   document.getElementById('login-modal').classList.remove('hidden');
   document.getElementById('login-modal').classList.add('flex');
@@ -217,6 +286,7 @@ function toggleViewMode() {
     document.getElementById('notif-dropdown').classList.add('hidden');
     renderUserSubmissions();
     updateStats();
+    if (publicMap) setTimeout(() => publicMap.invalidateSize(), 200);
   }
 }
 
@@ -225,6 +295,65 @@ function logoutAdmin() {
   toggleViewMode();
 }
 
+// ==========================================
+// PUBLIC SUBMISSION HANDLER
+// ==========================================
+function handleFormSubmit(e) {
+  e.preventDefault();
+
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.innerText = 'Submitting...';
+
+  const name = document.getElementById('reporter-name').value;
+  const category = document.getElementById('hazard-category').value;
+  const barangay = document.getElementById('hazard-barangay').value;
+  const location = document.getElementById('hazard-location').value;
+  const desc = document.getElementById('hazard-desc').value;
+  const lat = document.getElementById('hazard-lat').value;
+  const lng = document.getElementById('hazard-lng').value;
+
+  const newReport = {
+    name,
+    category,
+    barangay,
+    location,
+    desc,
+    lat,
+    lng,
+    photo: currentPhotoBase64 || null,
+    status: 'Pending',
+    date: new Date().toLocaleDateString(),
+    timestamp: Date.now()
+  };
+
+  if (reportsRef) {
+    reportsRef.push(newReport).then(() => {
+      document.getElementById('hazard-form').reset();
+      clearPhoto();
+      setPickerCoordinates(GENSAN_COORDS[0], GENSAN_COORDS[1]);
+      if (pickerMap && pickerMarker) {
+        pickerMap.setView(GENSAN_COORDS, 14);
+        pickerMarker.setLatLng(GENSAN_COORDS);
+      }
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Submit Hazard Report';
+      alert('Salamat! Your report has been submitted to General Santos City safety monitor.');
+    }).catch(err => {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Submit Hazard Report';
+      alert('Error: ' + err.message);
+    });
+  } else {
+    submitBtn.disabled = false;
+    submitBtn.innerText = 'Submit Hazard Report';
+    alert('Database connection not established.');
+  }
+}
+
+// ==========================================
+// DATA RENDERING & DASHBOARD UPDATES
+// ==========================================
 function getReportsArray() {
   return Object.keys(reportsMap).map(key => ({
     key,
@@ -250,43 +379,52 @@ function updateStats() {
   }
 }
 
-// RENDER PUBLIC TABLE
 function renderUserSubmissions() {
   const tbody = document.getElementById('user-table-body');
   const countBadge = document.getElementById('user-report-count');
-  const reportsList = getReportsArray();
+  const filterVal = document.getElementById('feed-status-filter')?.value || 'ALL';
+  
+  let reportsList = getReportsArray();
+  if (filterVal !== 'ALL') {
+    reportsList = reportsList.filter(r => r.status === filterVal);
+  }
 
   if (!tbody) return;
 
-  countBadge.innerText = `${reportsList.length} Aktibong Ulat`;
+  countBadge.innerText = `${reportsList.length} Reports`;
 
   if (reportsList.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">Walang naitalang ulat sa General Santos City sa kasalukuyan.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">No hazard reports matching the current filter in General Santos City.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = reportsList.map(r => `
     <tr class="hover:bg-slate-50/80 transition">
       <td class="p-3">
-        ${r.photo ? `<img src="${r.photo}" class="w-12 h-12 object-cover rounded-md border border-slate-200">` : `<span class="text-slate-400 italic text-[10px]">Walang larawan</span>`}
+        ${r.photo 
+          ? `<img src="${r.photo}" onclick="openImageModal('${r.photo}')" alt="Hazard" class="w-10 h-10 object-cover rounded-md border border-slate-200 cursor-pointer hover:opacity-80 transition">`
+          : `<div class="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 text-[10px]">No img</div>`
+        }
       </td>
       <td class="p-3 font-semibold text-slate-800">${r.category}</td>
-      <td class="p-3 font-medium text-blue-700">${r.location}</td>
-      <td class="p-3 text-slate-500 max-w-xs truncate">${r.desc}</td>
-      <td class="p-3 text-slate-400">${r.date || 'Ngayon'}</td>
+      <td class="p-3">
+        <span class="block font-bold text-blue-700">${r.barangay ? `Brgy. ${r.barangay}` : 'General Santos'}</span>
+        <span class="text-slate-500 text-[11px]">${r.location}</span>
+      </td>
+      <td class="p-3 text-slate-500 max-w-xs truncate" title="${r.desc}">${r.desc}</td>
+      <td class="p-3 text-slate-400">${r.date || 'Today'}</td>
       <td class="p-3 text-right">
         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
           r.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
         }">
           <span class="w-1.5 h-1.5 rounded-full ${r.status === 'Resolved' ? 'bg-emerald-500' : 'bg-amber-500'}"></span>
-          ${r.status === 'Resolved' ? 'Naresolba Na' : 'Inaaksyunan'}
+          ${r.status}
         </span>
       </td>
     </tr>
   `).join('');
 }
 
-// RENDER ADMIN TABLE
 function renderAdminTable() {
   const tbody = document.getElementById('admin-table-body');
   const reportsList = getReportsArray();
@@ -294,35 +432,41 @@ function renderAdminTable() {
   if (!tbody) return;
 
   if (reportsList.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Walang ulat sa cloud database.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">No reports in cloud database.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = reportsList.map(r => `
     <tr class="hover:bg-slate-800/50 transition">
       <td class="p-3">
-        ${r.photo ? `<img src="${r.photo}" class="w-12 h-12 object-cover rounded-md border border-slate-700">` : `<span class="text-slate-500 italic text-[10px]">Walang larawan</span>`}
+        ${r.photo 
+          ? `<img src="${r.photo}" onclick="openImageModal('${r.photo}')" alt="Hazard" class="w-10 h-10 object-cover rounded-md border border-slate-700 cursor-pointer hover:opacity-80 transition">`
+          : `<div class="w-10 h-10 rounded-md bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-[10px]">None</div>`
+        }
       </td>
       <td class="p-3 font-semibold text-white">${r.name}</td>
       <td class="p-3 text-slate-300">${r.category}</td>
-      <td class="p-3 text-blue-400 font-medium">${r.location}</td>
-      <td class="p-3 text-slate-400 max-w-xs truncate">${r.desc}</td>
-      <td class="p-3 text-slate-400">${r.date || 'Ngayon'}</td>
+      <td class="p-3">
+        <span class="block text-blue-400 font-semibold">${r.barangay ? `Brgy. ${r.barangay}` : 'GenSan'}</span>
+        <span class="text-slate-400 text-[11px]">${r.location}</span>
+      </td>
+      <td class="p-3 text-slate-400 max-w-xs truncate" title="${r.desc}">${r.desc}</td>
+      <td class="p-3 text-slate-400">${r.date || 'Today'}</td>
       <td class="p-3">
         <span class="px-2 py-0.5 text-[10px] rounded-full font-semibold ${
           r.status === 'Resolved' ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700' : 'bg-amber-900/60 text-amber-300 border border-amber-700'
         }">
-          ${r.status === 'Resolved' ? 'Naresolba Na' : 'Pending'}
+          ${r.status}
         </span>
       </td>
-      <td class="p-3 text-right space-x-1.5">
+      <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
         ${r.status === 'Pending' ? `
           <button onclick="resolveReport('${r.key}')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-[10px] font-semibold transition">
-            Resolbahin
+            Resolve
           </button>
         ` : ''}
         <button onclick="deleteReport('${r.key}')" class="bg-red-600/80 hover:bg-red-500 text-white px-2.5 py-1 rounded text-[10px] font-semibold transition">
-          Burahin
+          Delete
         </button>
       </td>
     </tr>
@@ -341,6 +485,9 @@ function deleteReport(key) {
   }
 }
 
+// ==========================================
+// NOTIFICATIONS
+// ==========================================
 function toggleNotifications() {
   const dropdown = document.getElementById('notif-dropdown');
   if (dropdown) {
@@ -368,7 +515,7 @@ function renderNotifications() {
 
   if (list) {
     if (notifications.length === 0) {
-      list.innerHTML = `<p class="p-4 text-xs text-slate-400 text-center">Walang bagong abiso</p>`;
+      list.innerHTML = `<p class="p-4 text-xs text-slate-400 text-center">No new notifications</p>`;
       return;
     }
 
